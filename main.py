@@ -50,6 +50,7 @@ try:
     response.raise_for_status()
 except requests.RequestException as e:
     logging.error(f"Ошибка при запросе API: {e}")
+    logging.info("Exiting due to an error.")
     sys.exit()
 
 # Преобразуем JSON-ответ в Python-структуру данных
@@ -59,26 +60,22 @@ data = response.json()
 generated_lines = [
     f'create {TMP_TABLE} hash:ip family inet hashsize 1024 maxelem 65536'
 ]
-for ip in data:
-    generated_lines.append(f'add {TMP_TABLE} {ip}')
+generated_lines.extend([f'add {TMP_TABLE} {ip}' for ip in data])
 
 # Определение пути к файлу относительно корня проекта
 file_path = os.path.join(ROOT_DIR, f"{TABLE}.tmp")
 
-changed = False
+changed = True
 
 # Проверяем существование файла перед открытием
-if os.path.exists(file_path):
+if os.path.isfile(file_path):
     with open(file_path, "r") as file:
         content = file.read()
 
     # Сравниваем существующий текст с генерируемым текстом
-    if content != "\n".join(generated_lines):
-        changed = True
-    else:
+    if content == "\n".join(generated_lines):
+        changed = False
         logging.info("Изменений нет")
-else:
-    changed = True
 
 if changed:
     # Сохраняем текст в файл

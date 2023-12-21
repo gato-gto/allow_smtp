@@ -77,6 +77,8 @@ if os.path.exists(file_path):
         changed = True
     else:
         logging.info("Изменений нет")
+else:
+    changed = True
 
 if changed:
     # Сохраняем текст в файл

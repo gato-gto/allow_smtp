@@ -1,3 +1,5 @@
+#!/opt/scripts/env/bin/python3
+
 import os
 import requests
 import subprocess

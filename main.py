@@ -55,48 +55,49 @@ except requests.RequestException as e:
 
 # Преобразуем JSON-ответ в Python-структуру данных
 data = response.json()
-
-# Генерируем текст из списка
-generated_lines = [
-    f'create {TMP_TABLE} hash:ip family inet hashsize 1024 maxelem 65536'
-]
-generated_lines.extend([f'add {TMP_TABLE} {ip}' for ip in data])
-
-# Определение пути к файлу относительно корня проекта
-file_path = os.path.join(ROOT_DIR, f"{TABLE}.tmp")
-
-changed = True
-
-# Проверяем существование файла перед открытием
-if os.path.isfile(file_path):
-    with open(file_path, "r") as file:
-        content = file.read()
-
-    # Сравниваем существующий текст с генерируемым текстом
-    if content == "\n".join(generated_lines):
-        changed = False
-        logging.info("Изменений нет")
-
-if changed:
-    # Сохраняем текст в файл
-    with open(file_path, "w") as file:
-        file.write("\n".join(generated_lines))
-        logging.info(f"Файл успешно создан: {file_path}")
-
-    # Проверяем существование таблицы allow_smtp перед swap и destroy
-    commands = [
-        f"/sbin/ipset restore -! < {file_path}",
-        f"/sbin/ipset swap {TMP_TABLE} {TABLE}",
-        f"/sbin/ipset destroy {TMP_TABLE}",
+if response.status_code == 200:
+    # Генерируем текст из списка
+    generated_lines = [
+        f'create {TMP_TABLE} hash:ip family inet hashsize 1024 maxelem 65536'
     ]
+    generated_lines.extend([f'add {TMP_TABLE} {ip}' for ip in data])
 
-    for command in commands:
-        try:
-            logging.info(f"Выполнение команды:{command}")
-            subprocess.run(command, shell=True, check=True)
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Ошибка при выполнении команды: {e}")
+    # Определение пути к файлу относительно корня проекта
+    file_path = os.path.join(ROOT_DIR, f"{TABLE}.tmp")
 
+    changed = True
+
+    # Проверяем существование файла перед открытием
+    if os.path.isfile(file_path):
+        with open(file_path, "r") as file:
+            content = file.read()
+
+        # Сравниваем существующий текст с генерируемым текстом
+        if content == "\n".join(generated_lines):
+            changed = False
+            logging.info("Изменений нет")
+
+    if changed:
+        # Сохраняем текст в файл
+        with open(file_path, "w") as file:
+            file.write("\n".join(generated_lines))
+            logging.info(f"Файл успешно создан: {file_path}")
+
+        # Проверяем существование таблицы allow_smtp перед swap и destroy
+        commands = [
+            f"/sbin/ipset restore -! < {file_path}",
+            f"/sbin/ipset swap {TMP_TABLE} {TABLE}",
+            f"/sbin/ipset destroy {TMP_TABLE}",
+        ]
+
+        for command in commands:
+            try:
+                logging.info(f"Выполнение команды:{command}")
+                subprocess.run(command, shell=True, check=True)
+            except subprocess.CalledProcessError as e:
+                logging.error(f"Ошибка при выполнении команды: {e}")
+else:
+    logging.warning("Нет данных")
 logging.info("Завершено")
 logging.info("====================")
 sys.exit()

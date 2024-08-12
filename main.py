@@ -45,10 +45,16 @@ def fetch_data(api_url):
         sys.exit(1)
 
 
+def ensure_cidr(ip_list):
+    """Добавляет маску /32 для IP-адресов без маски."""
+    return [f"{ip}/32" if '/' not in ip else ip for ip in ip_list]
+
+
 def generate_ipset_commands(table, data):
     """Генерирует команды для ipset на основе полученных данных."""
     logging.info(f"Генерация команд для ipset для таблицы {table}")
-    lines = [f'create {table}_tmp hash:ip family inet hashsize 1024 maxelem 65536']
+    lines = [f'create {table}_tmp hash:ip family inet hashsize 2048 maxelem 131072']
+    data = ensure_cidr(data)  # Добавляем /32 для IP-адресов без маски
     lines.extend([f'add {table}_tmp {ip}' for ip in data])
     return "\n".join(lines)
 

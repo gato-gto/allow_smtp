@@ -45,16 +45,10 @@ def fetch_data(api_url):
         sys.exit(1)
 
 
-def ensure_cidr(ip_list):
-    """Добавляет маску /32 для IP-адресов без маски."""
-    return [f"{ip}/32" if '/' not in ip else ip for ip in ip_list]
-
-
-def generate_ipset_commands(table, data):
+def generate_ipset_commands(table, data, hash_type):
     """Генерирует команды для ipset на основе полученных данных."""
-    logging.info(f"Генерация команд для ipset для таблицы {table}")
-    lines = [f'create {table}_tmp hash:ip family inet hashsize 2048 maxelem 131072']
-    data = ensure_cidr(data)  # Добавляем /32 для IP-адресов без маски
+    logging.info(f"Генерация команд для ipset для таблицы {table} с типом {hash_type}")
+    lines = [f'create {table}_tmp {hash_type} family inet hashsize 2048 maxelem 131072']
     lines.extend([f'add {table}_tmp {ip}' for ip in data])
     return "\n".join(lines)
 
@@ -94,21 +88,27 @@ def execute_ipset_commands(file_path, table):
 def main():
     logging.info("Запуск обновления для таблиц")
 
-    # Ассоциативный массив с таблицами и соответствующими URL API
+    # Ассоциативный массив с таблицами, их типами и соответствующими URL API
     api_endpoints = {
-        'allow_smtp': f"{API_URL}/allow_smtp?nas_name={NAS_NAME}",
-        'bypass': f"{API_URL}/zone?name=tasix"
+        'allow_smtp': {
+            'url': f"{API_URL}/allow_smtp?nas_name={NAS_NAME}",
+            'hash_type': "hash:ip"
+        },
+        'bypass': {
+            'url': f"{API_URL}/zone?name=tasix",
+            'hash_type': "hash:net"
+        }
     }
 
-    for table, api_url in api_endpoints.items():
+    for table, config in api_endpoints.items():
         logging.info(f"Обработка таблицы {table}")
 
         # Получаем данные с API
-        data = fetch_data(api_url)
+        data = fetch_data(config['url'])
 
-        # Генерируем команды для ipset
-        commands = generate_ipset_commands(table, data)
-        print(commands)
+        # Генерируем команды для ipset с учетом типа хэш-таблицы
+        commands = generate_ipset_commands(table, data, config['hash_type'])
+
         # Путь к файлу для сохранения данных
         file_path = os.path.join(ROOT_DIR, f"{table}.tmp")
 

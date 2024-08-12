@@ -8,8 +8,6 @@ import socket
 import urllib3
 import sys
 
-from dotenv import load_dotenv
-from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 
 # Отключаем предупреждения о проверке SSL
@@ -17,10 +15,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Определение корневого каталога проекта
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-ENV_PATH = Path(os.path.join(ROOT_DIR, '.env'))
-
-load_dotenv(dotenv_path=ENV_PATH)
 
 # Настройка логгера
 log_file_path = os.path.join(ROOT_DIR, 'logs.log')
@@ -32,72 +26,89 @@ logging.basicConfig(
     ]
 )
 
+API_URL = 'https://ex.spi.uz/api/test'
+
 # Получаем текущий hostname машины
 NAS_NAME = os.getenv('NAS_NAME', default=socket.gethostname())
 
-# Константы для таблиц
-TABLE = os.getenv('TABLE', default='allow_smtp')
-TMP_TABLE = f'{TABLE}_tmp'
 
-# Формируем URL API с использованием текущего hostname
-API_EP = f"{os.getenv('API_URL')}?nas_name={NAS_NAME}"
+def fetch_data(api_url):
+    """Получает данные с API."""
+    try:
+        response = requests.get(api_url, verify=False, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        logging.error(f"Ошибка при запросе API: {e}")
+        sys.exit(1)
 
-logging.info("Запуск")
 
-# Получаем данные с API с включенной проверкой SSL-сертификата
-try:
-    response = requests.get(API_EP, verify=False, timeout=10)
-    response.raise_for_status()
-except requests.RequestException as e:
-    logging.error(f"Ошибка при запросе API: {e}")
-    logging.info("Exiting due to an error.")
-    sys.exit()
+def generate_ipset_commands(table, data):
+    """Генерирует команды для ipset на основе полученных данных."""
+    lines = [f'create {table}_tmp hash:ip family inet hashsize 1024 maxelem 65536']
+    lines.extend([f'add {table}_tmp {ip}' for ip in data])
+    return "\n".join(lines)
 
-# Преобразуем JSON-ответ в Python-структуру данных
-data = response.json()
-if response.status_code == 200:
-    # Генерируем текст из списка
-    generated_lines = [
-        f'create {TMP_TABLE} hash:ip family inet hashsize 1024 maxelem 65536'
-    ]
-    generated_lines.extend([f'add {TMP_TABLE} {ip}' for ip in data])
 
-    # Определение пути к файлу относительно корня проекта
-    file_path = os.path.join(ROOT_DIR, f"{TABLE}.tmp")
-
-    changed = True
-
-    # Проверяем существование файла перед открытием
+def save_to_file(file_path, content):
+    """Сохраняет содержимое в файл, если оно изменилось."""
     if os.path.isfile(file_path):
         with open(file_path, "r") as file:
-            content = file.read()
+            if file.read() == content:
+                logging.info("Изменений нет")
+                return False
 
-        # Сравниваем существующий текст с генерируемым текстом
-        if content == "\n".join(generated_lines):
-            changed = False
-            logging.info("Изменений нет")
+    with open(file_path, "w") as file:
+        file.write(content)
+        logging.info(f"Файл успешно создан: {file_path}")
+    return True
 
-    if changed:
-        # Сохраняем текст в файл
-        with open(file_path, "w") as file:
-            file.write("\n".join(generated_lines))
-            logging.info(f"Файл успешно создан: {file_path}")
 
-        # Проверяем существование таблицы allow_smtp перед swap и destroy
-        commands = [
-            f"/sbin/ipset restore -! < {file_path}",
-            f"/sbin/ipset swap {TMP_TABLE} {TABLE}",
-            f"/sbin/ipset destroy {TMP_TABLE}",
-        ]
+def execute_ipset_commands(file_path, table):
+    """Выполняет команды для обновления ipset."""
+    commands = [
+        f"/sbin/ipset restore -! < {file_path}",
+        f"/sbin/ipset swap {table}_tmp {table}",
+        f"/sbin/ipset destroy {table}_tmp",
+    ]
 
-        for command in commands:
-            try:
-                logging.info(f"Выполнение команды:{command}")
-                subprocess.run(command, shell=True, check=True)
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Ошибка при выполнении команды: {e}")
-else:
-    logging.warning("Нет данных")
-logging.info("Завершено")
-logging.info("====================")
-sys.exit()
+    for command in commands:
+        try:
+            logging.info(f"Выполнение команды: {command}")
+            subprocess.run(command, shell=True, check=True)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Ошибка при выполнении команды: {e}")
+
+
+def main():
+    logging.info("Запуск обновления для таблиц")
+
+    # Ассоциативный массив с таблицами и соответствующими URL API
+    api_endpoints = {
+        'allow_smtp': f"{API_URL}/allow_smtp?nas_name={NAS_NAME}",
+        'bypass': f"{API_URL}/zone?name=tasix"
+    }
+
+    for table, api_url in api_endpoints.items():
+        logging.info(f"Обработка таблицы {table}")
+
+        # Получаем данные с API
+        data = fetch_data(api_url)
+
+        # Генерируем команды для ipset
+        commands = generate_ipset_commands(table, data)
+
+        # Путь к файлу для сохранения данных
+        file_path = os.path.join(ROOT_DIR, f"{table}.tmp")
+
+        # Сохраняем данные в файл и выполняем команды, если данные изменились
+        if save_to_file(file_path, commands):
+            execute_ipset_commands(file_path, table)
+
+    logging.info("Завершено")
+    logging.info("====================")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

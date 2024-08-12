@@ -34,9 +34,11 @@ NAS_NAME = os.getenv('NAS_NAME', default=socket.gethostname())
 
 def fetch_data(api_url):
     """Получает данные с API."""
+    logging.info(f"Запрос данных с API: {api_url}")
     try:
         response = requests.get(api_url, verify=False, timeout=10)
         response.raise_for_status()
+        logging.info("Данные успешно получены с API")
         return response.json()
     except requests.RequestException as e:
         logging.error(f"Ошибка при запросе API: {e}")
@@ -45,6 +47,7 @@ def fetch_data(api_url):
 
 def generate_ipset_commands(table, data):
     """Генерирует команды для ipset на основе полученных данных."""
+    logging.info(f"Генерация команд для ipset для таблицы {table}")
     lines = [f'create {table}_tmp hash:ip family inet hashsize 1024 maxelem 65536']
     lines.extend([f'add {table}_tmp {ip}' for ip in data])
     return "\n".join(lines)
@@ -52,20 +55,22 @@ def generate_ipset_commands(table, data):
 
 def save_to_file(file_path, content):
     """Сохраняет содержимое в файл, если оно изменилось."""
+    logging.info(f"Проверка изменений и сохранение файла: {file_path}")
     if os.path.isfile(file_path):
         with open(file_path, "r") as file:
             if file.read() == content:
-                logging.info("Изменений нет")
+                logging.info("Изменений нет, сохранение не требуется")
                 return False
 
     with open(file_path, "w") as file:
         file.write(content)
-        logging.info(f"Файл успешно создан: {file_path}")
+        logging.info(f"Файл успешно сохранен: {file_path}")
     return True
 
 
 def execute_ipset_commands(file_path, table):
     """Выполняет команды для обновления ipset."""
+    logging.info(f"Начало выполнения команд для обновления ipset таблицы {table}")
     commands = [
         f"/sbin/ipset restore -! < {file_path}",
         f"/sbin/ipset swap {table}_tmp {table}",
@@ -105,7 +110,7 @@ def main():
         if save_to_file(file_path, commands):
             execute_ipset_commands(file_path, table)
 
-    logging.info("Завершено")
+    logging.info("Завершено обновление для всех таблиц")
     logging.info("====================")
     sys.exit(0)
 

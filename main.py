@@ -108,7 +108,7 @@ def main():
 
         # Генерируем команды для ipset
         commands = generate_ipset_commands(table, data)
-
+        print(commands)
         # Путь к файлу для сохранения данных
         file_path = os.path.join(ROOT_DIR, f"{table}.tmp")
 
